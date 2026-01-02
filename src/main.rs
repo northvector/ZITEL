@@ -104,6 +104,8 @@ async fn api_request(_token: &str, auth_header: &str, command: &str) -> Result<s
 }
 
 async fn set_dmz(token: &str, auth_header: &str) -> Result<(), Box<dyn Error>> {
+    execute!(io::stdout(), Clear(ClearType::All), MoveTo(0, 0))?;
+        
     print!("Enter DMZ IP address (press Enter for default {}): ", DEFAULT_DMZ_IP);
     io::stdout().flush()?;
     
@@ -321,6 +323,11 @@ fn format_bytes(bytes: u64) -> String {
 }
 
 async fn get_neighbour_cells(token: &str, auth_header: &str) -> Result<(), Box<dyn Error>> {
+
+    execute!(io::stdout(), Clear(ClearType::All), MoveTo(0, 0))?;
+    io::stdout().flush()?; // Ensure clear command is executed
+
+
     println!("\nFetching neighbor cells (this may take a moment)...");
     
     let response = api_request(token, auth_header, "get_neighbour_cell").await?;
