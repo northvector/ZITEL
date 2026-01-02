@@ -108,97 +108,133 @@ async fn set_dmz(token: &str, auth_header: &str) -> Result<(), Box<dyn Error>> {
 }
 
 async fn get_index_data_loop(token: &str, auth_header: &str) -> Result<(), Box<dyn Error>> {
-    println!("\n=== Index Data (Press Ctrl+C to stop) ===\n");
+    println!("\n=== Index Data (Press 'q' and Enter to return to menu) ===\n");
+    
+    // Spawn a task to handle user input
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<bool>(1);
+    
+    tokio::spawn(async move {
+        loop {
+            let mut input = String::new();
+            if io::stdin().read_line(&mut input).is_ok() {
+                if input.trim().eq_ignore_ascii_case("q") {
+                    let _ = tx.send(true).await;
+                    break;
+                }
+            }
+        }
+    });
     
     loop {
+        // Check if user wants to quit
+        if rx.try_recv().is_ok() {
+            println!("\nReturning to menu...");
+            break;
+        }
+        
         let response = api_request(token, auth_header, "get_index_data").await?;
         
-        // Clear screen (works on Unix and Windows 10+)
+        // Clear screen
         print!("\x1B[2J\x1B[1;1H");
         
-        println!("╔══════════════════════════════════════════════════════════════════════╗");
-        println!("║                        ROUTER STATUS                                 ║");
-        println!("╚══════════════════════════════════════════════════════════════════════╝\n");
+        println!("╔════════════════════════════════════════════════════════════════════════════════════════════════╗");
+        println!("║                                    ROUTER STATUS                                               ║");
+        println!("╠════════════════════════════════════════════════════════════════════════════════════════════════╣");
+        println!("║ Last Updated: {:70} ║", chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string());
+        println!("╚════════════════════════════════════════════════════════════════════════════════════════════════╝\n");
         
-        // Network Information
-        println!("📡 NETWORK INFORMATION:");
-        print_field(&response, "IMEI", "IMEI");
-        print_field(&response, "IMSI", "IMSI");
-        print_field(&response, "ICCID", "ICCID");
-        print_field(&response, "APN", "APN");
-        print_field(&response, "INTERNET", "Status");
-        println!();
+        // Network Information Table
+        println!("┌─────────────────────────────────────────────────────────────────────────────────────────────┐");
+        println!("│ 📡 NETWORK INFORMATION                                                                      │");
+        println!("├─────────────────────────────┬───────────────────────────────────────────────────────────────┤");
+        print_table_row(&response, "IMEI", "IMEI");
+        print_table_row(&response, "IMSI", "IMSI");
+        print_table_row(&response, "ICCID", "ICCID");
+        print_table_row(&response, "APN", "APN");
+        print_table_row(&response, "INTERNET", "Internet Status");
+        println!("└─────────────────────────────┴───────────────────────────────────────────────────────────────┘\n");
         
-        // Connection Details
-        println!("🔗 CONNECTION:");
-        print_field(&response, "TYPE", "Type");
-        print_field(&response, "BAND", "Band");
-        print_field(&response, "CSQ", "Signal Quality");
-        print_field(&response, "RSRP", "RSRP (dBm)");
-        print_field(&response, "RSRQ", "RSRQ (dB)");
-        print_field(&response, "SINR", "SINR (dB)");
-        print_field(&response, "RSSI", "RSSI (dBm)");
-        println!();
+        // Connection Table
+        println!("┌─────────────────────────────────────────────────────────────────────────────────────────────┐");
+        println!("│ 🔗 CONNECTION                                                                               │");
+        println!("├─────────────────────────────┬───────────────────────────────────────────────────────────────┤");
+        print_table_row(&response, "TYPE", "Type");
+        print_table_row(&response, "BAND", "Band");
+        print_table_row(&response, "CSQ", "Signal Quality");
+        print_table_row(&response, "RSRP", "RSRP");
+        print_table_row(&response, "RSRQ", "RSRQ");
+        print_table_row(&response, "SINR", "SINR");
+        print_table_row(&response, "RSSI", "RSSI");
+        println!("└─────────────────────────────┴───────────────────────────────────────────────────────────────┘\n");
         
-        // Cell Information
-        println!("📍 CELL INFO:");
-        print_field(&response, "MCC", "MCC");
-        print_field(&response, "MNC", "MNC");
-        print_field(&response, "PCID", "PCI");
-        print_field(&response, "EARFCN", "EARFCN");
-        print_field(&response, "TAC", "TAC");
-        print_field(&response, "ENODE", "eNodeB");
-        print_field(&response, "CELL", "Cell ID");
-        println!();
+        // Cell Information Table
+        println!("┌─────────────────────────────────────────────────────────────────────────────────────────────┐");
+        println!("│ 📍 CELL INFO                                                                                │");
+        println!("├─────────────────────────────┬───────────────────────────────────────────────────────────────┤");
+        print_table_row(&response, "MCC", "MCC");
+        print_table_row(&response, "MNC", "MNC");
+        print_table_row(&response, "PCID", "PCI");
+        print_table_row(&response, "EARFCN", "EARFCN");
+        print_table_row(&response, "TAC", "TAC");
+        print_table_row(&response, "ENODE", "eNodeB");
+        print_table_row(&response, "CELL", "Cell ID");
+        println!("└─────────────────────────────┴───────────────────────────────────────────────────────────────┘\n");
         
-        // IP Information
-        println!("🌐 IP CONFIG:");
-        print_field(&response, "IPV4", "IPv4");
-        print_field(&response, "IPV6", "IPv6");
-        print_field(&response, "DNS1", "DNS1");
-        print_field(&response, "DNS2", "DNS2");
-        print_field(&response, "lanip", "LAN IP");
-        print_field(&response, "netmask", "Netmask");
-        println!();
+        // IP Configuration Table
+        println!("┌─────────────────────────────────────────────────────────────────────────────────────────────┐");
+        println!("│ 🌐 IP CONFIGURATION                                                                         │");
+        println!("├─────────────────────────────┬───────────────────────────────────────────────────────────────┤");
+        print_table_row(&response, "IPV4", "IPv4");
+        print_table_row(&response, "IPV6", "IPv6");
+        print_table_row(&response, "DNS1", "DNS1");
+        print_table_row(&response, "DNS2", "DNS2");
+        print_table_row(&response, "lanip", "LAN IP");
+        print_table_row(&response, "netmask", "Netmask");
+        println!("└─────────────────────────────┴───────────────────────────────────────────────────────────────┘\n");
         
-        // Data Usage
-        println!("📊 DATA USAGE:");
+        // Data Usage Table
+        println!("┌─────────────────────────────────────────────────────────────────────────────────────────────┐");
+        println!("│ 📊 DATA USAGE                                                                               │");
+        println!("├─────────────────────────────┬───────────────────────────────────────────────────────────────┤");
         if let Some(rx) = response["recieve"].as_str() {
             if let Ok(bytes) = rx.parse::<u64>() {
-                println!("  Received: {}", format_bytes(bytes));
+                println!("│ {:27} │ {:61} │", "Received", format_bytes(bytes));
             }
         }
         if let Some(tx) = response["sentt"].as_str() {
             if let Ok(bytes) = tx.parse::<u64>() {
-                println!("  Sent: {}", format_bytes(bytes));
+                println!("│ {:27} │ {:61} │", "Sent", format_bytes(bytes));
             }
         }
-        println!();
+        println!("└─────────────────────────────┴───────────────────────────────────────────────────────────────┘\n");
         
-        // System Information
-        println!("⚙️  SYSTEM:");
-        print_field(&response, "model", "Model");
-        print_field(&response, "serial", "Serial");
-        print_field(&response, "hardv", "Hardware");
-        print_field(&response, "sofv", "Software");
-        print_field(&response, "SYSUP", "System Uptime (s)");
-        print_field(&response, "WANUP", "WAN Uptime (s)");
-        print_field(&response, "ram", "RAM (MB)");
-        print_field(&response, "cpu1", "CPU1 (%)");
-        print_field(&response, "cpu2", "CPU2 (%)");
-        println!();
+        // System Information Table
+        println!("┌─────────────────────────────────────────────────────────────────────────────────────────────┐");
+        println!("│ ⚙️  SYSTEM                                                                                   │");
+        println!("├─────────────────────────────┬───────────────────────────────────────────────────────────────┤");
+        print_table_row(&response, "model", "Model");
+        print_table_row(&response, "serial", "Serial");
+        print_table_row(&response, "hardv", "Hardware");
+        print_table_row(&response, "sofv", "Software");
+        print_table_row(&response, "SYSUP", "System Uptime (s)");
+        print_table_row(&response, "WANUP", "WAN Uptime (s)");
+        print_table_row(&response, "ram", "RAM (MB)");
+        print_table_row(&response, "cpu1", "CPU1 (%)");
+        print_table_row(&response, "cpu2", "CPU2 (%)");
+        println!("└─────────────────────────────┴───────────────────────────────────────────────────────────────┘");
         
-        println!("Last updated: {}", chrono::Local::now().format("%H:%M:%S"));
-        println!("\n(Refreshing in 5 seconds... Press Ctrl+C to stop)");
+        println!("\nPress 'q' and Enter to return to menu");
         
-        tokio::time::sleep(Duration::from_secs(5)).await;
+        tokio::time::sleep(Duration::from_secs(2)).await;
     }
+    
+    Ok(())
 }
 
-fn print_field(json: &serde_json::Value, key: &str, label: &str) {
+fn print_table_row(json: &serde_json::Value, key: &str, label: &str) {
     if let Some(value) = json[key].as_str() {
         if !value.is_empty() {
-            println!("  {}: {}", label, value);
+            println!("│ {:27} │ {:61} │", label, value);
         }
     }
 }
