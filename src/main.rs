@@ -5,8 +5,10 @@ use std::time::Duration;
 use crossterm::{
     cursor::MoveTo,
     execute,
-    terminal::{Clear, ClearType, DisableBracketedPaste, EnableBracketedPaste},
+    terminal::{Clear, ClearType},
+    event::{EnableBracketedPaste, DisableBracketedPaste},
 };
+
 use tokio::time::sleep;
 
 const BASE_URL: &str = "http://192.168.0.1";
