@@ -2,12 +2,22 @@ use std::error::Error;
 use std::io::{self, Write};
 use std::time::Duration;
 
+use crossterm::{
+    cursor::MoveTo,
+    execute,
+    terminal::{Clear, ClearType, DisableBracketedPaste, EnableBracketedPaste},
+};
+use tokio::time::sleep;
+
 const BASE_URL: &str = "http://192.168.0.1";
 const DEFAULT_DMZ_IP: &str = "192.168.0.98";
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     println!("=== Leano Router API Client ===\n");
+    
+    // Enable bracketed paste for better terminal handling
+    execute!(io::stdout(), EnableBracketedPaste)?;
     
     // Authenticate and get both token and auth header
     let (token, auth_header) = authenticate().await?;
@@ -39,6 +49,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     }
     
+    // Disable bracketed paste on exit
+    execute!(io::stdout(), DisableBracketedPaste)?;
     Ok(())
 }
 
@@ -113,8 +125,8 @@ async fn get_index_data_loop(token: &str, auth_header: &str) -> Result<(), Box<d
     loop {
         println!("\n=== Index Data - Page {} of {} ===", current_page, TOTAL_PAGES);
         
-        // Clear screen using ANSI escape codes
-        print!("\x1B[2J\x1B[1;1H");
+        // Clear screen and move cursor to top-left using crossterm
+        execute!(io::stdout(), Clear(ClearType::All), MoveTo(0, 0))?;
         io::stdout().flush()?; // Ensure clear command is executed
         
         let response = api_request(token, auth_header, "get_index_data").await?;
@@ -148,7 +160,7 @@ async fn get_index_data_loop(token: &str, auth_header: &str) -> Result<(), Box<d
         }
         
         // Add a small delay to prevent excessive refresh
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        sleep(Duration::from_millis(200)).await;
     }
     
     Ok(())
