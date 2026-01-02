@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::error::Error;
 use std::io::{self, Write};
 use std::time::Duration;
@@ -69,7 +68,7 @@ async fn authenticate() -> Result<(String, String), Box<dyn Error>> {
     }
 }
 
-async fn api_request(token: &str, auth_header: &str, command: &str) -> Result<serde_json::Value, Box<dyn Error>> {
+async fn api_request(_token: &str, auth_header: &str, command: &str) -> Result<serde_json::Value, Box<dyn Error>> {
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(30))
         .build()?;
@@ -270,12 +269,12 @@ async fn get_neighbour_cells(token: &str, auth_header: &str) -> Result<(), Box<d
         if let Ok(count) = length.parse::<usize>() {
             for i in 1..=count {
                 println!("─── Cell {} ───", i);
-                print_field(&response, &format!("type{}", i), "MCC");
-                print_field(&response, &format!("band{}", i), "MNC");
-                print_field(&response, &format!("pcid{}", i), "Band");
-                print_field(&response, &format!("rsrq{}", i), "ARFCN");
-                print_field(&response, &format!("rsrp{}", i), "PCI");
-                print_field(&response, &format!("rsrppp{}", i), "Signal (dBm)");
+                print_table_row(&response, &format!("type{}", i), "MCC");
+                print_table_row(&response, &format!("band{}", i), "MNC");
+                print_table_row(&response, &format!("pcid{}", i), "Band");
+                print_table_row(&response, &format!("rsrq{}", i), "ARFCN");
+                print_table_row(&response, &format!("rsrp{}", i), "PCI");
+                print_table_row(&response, &format!("rsrppp{}", i), "Signal (dBm)");
                 println!();
             }
         }
