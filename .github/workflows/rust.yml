@@ -3,10 +3,10 @@ name: Build & Release (Windows)
 on:
   workflow_dispatch:
     inputs:
-      version:
-        description: "Release version (e.g. v1.0.0)"
+      tag:
+        description: "Tag name (e.g. v1.0.0)"
         required: true
-  
+
 permissions:
   contents: write
 
@@ -15,21 +15,20 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Install Rust
         uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
-          target: x86_64-pc-windows-msvc
           override: true
 
-      - name: Build release binary
+      - name: Build
         run: cargo build --release
 
-      - name: Create GitHub Release
+      - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            target/release/zitel.exe
+          tag_name: ${{ inputs.tag }}
+          name: ZITEL ${{ inputs.tag }}
+          files: target/release/zitel.exe
