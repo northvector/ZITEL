@@ -16,7 +16,7 @@ const DEFAULT_DMZ_IP: &str = "192.168.0.98";
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    println!("=== Leano Router API Client ===\n");
+    println!("=== Zitel Router Manager | Created by @Northvector ===\n");
     
     // Enable bracketed paste for better terminal handling
     execute!(io::stdout(), EnableBracketedPaste)?;
@@ -28,7 +28,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     loop {
         println!("\n--- Menu ---");
         println!("1. Set DMZ");
-        println!("2. Get Index Data (Auto-refresh table)");
+        println!("2. Get Dashboard Data");
         println!("3. Get Neighbor Cells");
         println!("4. Set Band Lock");
         println!("5. Exit");
