@@ -12,7 +12,7 @@ use crossterm::{
 use tokio::time::sleep;
 
 const BASE_URL: &str = "http://192.168.0.1";
-const DEFAULT_DMZ_IP: &str = "192.168.0.98";
+const DEFAULT_DMZ_IP: &str = "192.168.0.92";
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -31,7 +31,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         println!("2. Get Dashboard Data");
         println!("3. Get Neighbor Cells");
         println!("4. Set Band Lock");
-        println!("5. Exit");
+        println!("6. Exit");
+        println!("6. Speed Test");
         print!("\nSelect option: ");
         io::stdout().flush()?;
         
@@ -43,10 +44,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
             "2" => get_index_data_loop(&token, &auth_header).await?,
             "3" => get_neighbour_cells(&token, &auth_header).await?,
             "4" => set_band_lock(&token, &auth_header).await?,
-            "5" => {
+            "5" => speed_test(&token, &auth_header).await?,
+            "6" => {
                 println!("Goodbye!");
                 break;
-            }
+            },
             _ => println!("Invalid option"),
         }
     }
@@ -119,6 +121,58 @@ async fn set_dmz(token: &str, auth_header: &str) -> Result<(), Box<dyn Error>> {
     let response = api_request(token, auth_header, &command).await?;
     
     println!("\nResponse: {}", serde_json::to_string_pretty(&response)?);
+    Ok(())
+}
+
+async fn speed_test(_token: &str, _auth_header: &str) -> Result<(), Box<dyn Error>> {
+    use reqwest::Client;
+    use std::time::Instant;
+
+    execute!(io::stdout(), Clear(ClearType::All), MoveTo(0, 0))?;
+    io::stdout().flush()?;
+
+    println!("🚀 Running speed test...\n");
+
+    let client = Client::builder()
+        .timeout(Duration::from_secs(30))
+        .build()?;
+
+    // ---- PING ----
+    let ping_start = Instant::now();
+    let _ = client.get("https://www.google.com").send().await?;
+    let ping_ms = ping_start.elapsed().as_millis();
+
+    // ---- DOWNLOAD ----
+    let dl_start = Instant::now();
+    let bytes = client
+        .get("https://speed.hetzner.de/100MB.bin")
+        .send()
+        .await?
+        .bytes()
+        .await?
+        .len();
+    let dl_time = dl_start.elapsed().as_secs_f64();
+    let download_mbps = (bytes as f64 * 8.0) / (dl_time * 1_000_000.0);
+
+    // ---- UPLOAD ----
+    let upload_data = vec![0u8; 10 * 1024 * 1024]; // 10 MB
+    let ul_start = Instant::now();
+    client
+        .post("https://httpbin.org/post")
+        .body(upload_data)
+        .send()
+        .await?;
+    let ul_time = ul_start.elapsed().as_secs_f64();
+    let upload_mbps = (10.0 * 8.0) / ul_time;
+
+    println!("╔══════════════════════════════════════════════╗");
+    println!("║                 SPEED TEST                  ║");
+    println!("╚══════════════════════════════════════════════╝\n");
+
+    println!("Ping     : {} ms", ping_ms);
+    println!("Download : {:.2} Mbps", download_mbps);
+    println!("Upload   : {:.2} Mbps", upload_mbps);
+
     Ok(())
 }
 
