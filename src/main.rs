@@ -66,8 +66,6 @@ impl BandLockState {
 }
 
 struct App {
-    token: String,
-    auth_header: String,
     page: Page,
     index_data: Value,
     neighbour_data: Value,
@@ -77,11 +75,11 @@ struct App {
     dmz_ip_input: String,
     band_lock_state: BandLockState,
     status_message: String,
-    last_refresh_request: Instant,
     request_tx: mpsc::UnboundedSender<(Request, mpsc::UnboundedSender<Response>)>,
 
     // lazy neighbour fetch
     neighbour_fetched: bool,
+    neighbour_fetching: bool,
 
     // traffic tracking (per‑dashboard request)
     last_dashboard_time: Option<Instant>,
@@ -101,26 +99,20 @@ struct App {
 enum Request {
     RefreshDashboard,
     FetchNeighbors,
-    SetBandLock { index: usize, earfcn: String },
+    SetBandLock { earfcn: String },
     SetDmz { ip: String },
 }
 
 enum Response {
     DashboardData { data: Value, error: Option<String> },
     NeighborData { data: Value, error: Option<String> },
-    BandLockResult { earfcn: String, result: String },
+    BandLockResult { result: String },
     DmzResult(String),
 }
 
 impl App {
-    fn new(
-        token: String,
-        auth_header: String,
-        request_tx: mpsc::UnboundedSender<(Request, mpsc::UnboundedSender<Response>)>,
-    ) -> Self {
+    fn new(request_tx: mpsc::UnboundedSender<(Request, mpsc::UnboundedSender<Response>)>) -> Self {
         Self {
-            token,
-            auth_header,
             page: Page::Dashboard,
             index_data: Value::Null,
             neighbour_data: Value::Null,
@@ -130,9 +122,9 @@ impl App {
             dmz_ip_input: String::new(),
             band_lock_state: BandLockState::new(),
             status_message: String::new(),
-            last_refresh_request: Instant::now(),
             request_tx,
             neighbour_fetched: false,
+            neighbour_fetching: false,
             last_dashboard_time: None,
             prev_receive: None,
             prev_sent: None,
@@ -287,7 +279,7 @@ async fn run_handlers(
                 };
                 let _ = resp_tx.send(Response::NeighborData { data, error });
             }
-            Request::SetBandLock { index: _, earfcn } => {
+            Request::SetBandLock { earfcn } => {
                 let command = format!("set_band_lock {}", earfcn);
                 let result = api_request(&auth_header, &command).await;
                 let msg = match result {
@@ -298,10 +290,7 @@ async fn run_handlers(
                     ),
                     Err(e) => format!("Error: {}", e),
                 };
-                let _ = resp_tx.send(Response::BandLockResult {
-                    earfcn,
-                    result: msg,
-                });
+                let _ = resp_tx.send(Response::BandLockResult { result: msg });
             }
             Request::SetDmz { ip } => {
                 let command = format!("set_dmz 1 tcpudp {}", ip);
@@ -380,7 +369,7 @@ fn draw_dashboard(f: &mut Frame, app: &mut App) {
     let binding = app.rsrp_history.make_contiguous();
     let rsrp_sparkline = Sparkline::default()
         .block(Block::default().title("RSRP (dBm)").borders(Borders::ALL))
-        .data(&binding)
+        .data(binding)
         .style(Style::default().fg(Color::Yellow));
     f.render_widget(rsrp_sparkline, right_chunks[0]);
 
@@ -411,7 +400,7 @@ fn draw_dashboard(f: &mut Frame, app: &mut App) {
     f.render_widget(Paragraph::new(sys_text).block(sys_block), right_chunks[3]);
 }
 
-fn build_connection_text(data: &Value) -> Text {
+fn build_connection_text(data: &Value) -> Text<'_> {
     let mut lines = vec![];
     add_line(&mut lines, "Type", data, "TYPE");
     add_line(&mut lines, "Band", data, "BAND");
@@ -441,7 +430,7 @@ fn build_connection_text(data: &Value) -> Text {
     Text::from(lines)
 }
 
-fn build_cell_text(data: &Value) -> Text {
+fn build_cell_text(data: &Value) -> Text<'_> {
     let mut lines = vec![];
     add_line(&mut lines, "Modem Call Control", data, "MCC");
     add_line(&mut lines, "MNC", data, "MNC");
@@ -453,7 +442,7 @@ fn build_cell_text(data: &Value) -> Text {
     Text::from(lines)
 }
 
-fn build_data_usage_text(app: &App) -> Text {
+fn build_data_usage_text(app: &App) -> Text<'_> {
     let mut lines = vec![];
     let current_rx = app.index_data["recieve"]
         .as_str()
@@ -489,7 +478,7 @@ fn build_data_usage_text(app: &App) -> Text {
     Text::from(lines)
 }
 
-fn build_system_text(data: &Value) -> Text {
+fn build_system_text(data: &Value) -> Text<'_> {
     let mut lines = vec![];
     add_line(&mut lines, "Model", data, "model");
     add_line(&mut lines, "Serial", data, "serial");
@@ -551,23 +540,30 @@ fn draw_neighbor_cells(f: &mut Frame, app: &App) {
         .block(Block::default().borders(Borders::ALL));
     f.render_widget(title, chunks[0]);
 
-    let data = &app.neighbour_data;
-    let count = data["lenghtt"]
-        .as_str()
-        .and_then(|s| s.parse::<usize>().ok())
-        .unwrap_or(0);
-
     let mut lines = vec![];
-    lines.push(Line::from(format!("Found {} neighbor cell(s)", count)));
-    for i in 1..=count {
-        lines.push(Line::from(""));
-        lines.push(Line::from(format!(" Cell {} ", i)));
-        add_line(&mut lines, "MCC", data, &format!("type{}", i));
-        add_line(&mut lines, "MNC", data, &format!("band{}", i));
-        add_line(&mut lines, "Band", data, &format!("pcid{}", i));
-        add_line(&mut lines, "ARFCN", data, &format!("rsrq{}", i));
-        add_line(&mut lines, "PCI", data, &format!("rsrp{}", i));
-        add_line(&mut lines, "Signal(dBm)", data, &format!("rsrppp{}", i));
+    if app.neighbour_fetching {
+        lines.push(Line::from("Searching neighbour cells..."));
+    } else if !app.neighbour_fetched {
+        lines.push(Line::from("Neighbour search may briefly disconnect Wi-Fi."));
+        lines.push(Line::from("Press Enter to start searching, or switch tabs to skip."));
+    } else {
+        let data = &app.neighbour_data;
+        let count = data["lenghtt"]
+            .as_str()
+            .and_then(|s| s.parse::<usize>().ok())
+            .unwrap_or(0);
+
+        lines.push(Line::from(format!("Found {} neighbor cell(s)", count)));
+        for i in 1..=count {
+            lines.push(Line::from(""));
+            lines.push(Line::from(format!(" Cell {} ", i)));
+            add_line(&mut lines, "MCC", data, &format!("type{}", i));
+            add_line(&mut lines, "MNC", data, &format!("band{}", i));
+            add_line(&mut lines, "Band", data, &format!("pcid{}", i));
+            add_line(&mut lines, "ARFCN", data, &format!("rsrq{}", i));
+            add_line(&mut lines, "PCI", data, &format!("rsrp{}", i));
+            add_line(&mut lines, "Signal(dBm)", data, &format!("rsrppp{}", i));
+        }
     }
 
     let text = Text::from(lines);
@@ -693,7 +689,7 @@ fn ui(f: &mut Frame, app: &mut App) {
 // ---------- main TUI loop ----------
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let (token, auth_header) = authenticate().await?;
+    let (_, auth_header) = authenticate().await?;
 
     let (worker_tx, request_rx) =
         mpsc::unbounded_channel::<(Request, mpsc::UnboundedSender<Response>)>();
@@ -715,7 +711,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let mut app = App::new(token, auth_header.clone(), worker_tx.clone());
+    let mut app = App::new(worker_tx.clone());
 
     send_request(&app.request_tx, &response_tx, Request::RefreshDashboard);
 
@@ -745,14 +741,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     }
                 }
                 Response::NeighborData { data, error } => {
+                    app.neighbour_fetching = false;
                     if let Some(e) = error {
                         app.status_message = format!("Neighbour error: {}", e);
                     } else {
                         app.neighbour_data = data;
+                        app.neighbour_fetched = true;
                         app.status_message = "Neighbour cells fetched".into();
                     }
                 }
-                Response::BandLockResult { result, .. } => {
+                Response::BandLockResult { result } => {
                     app.band_lock_response = Some(result);
                 }
                 Response::DmzResult(result) => {
@@ -794,20 +792,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             }
                             KeyCode::Tab => {
                                 app.next_page();
-                                if matches!(app.page, Page::NeighborCells) && !app.neighbour_fetched {
-                                    app.neighbour_fetched = true;
-                                    send_request(
-                                        &app.request_tx,
-                                        &response_tx,
-                                        Request::FetchNeighbors,
-                                    );  
-                                }
                             }
-                            KeyCode::Char(c) => {
-                                // Allow digits and dots only (simple IP input)
-                                if c.is_ascii_digit() || c == '.' {
-                                    app.dmz_ip_input.push(c);
-                                }
+                            // Allow digits and dots only (simple IP input)
+                            KeyCode::Char(c) if c.is_ascii_digit() || c == '.' => {
+                                app.dmz_ip_input.push(c);
                             }
                             _ => {}
                         }
@@ -818,36 +806,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     match key.code {
                         KeyCode::Tab => {
                             app.next_page();
-                            if matches!(app.page, Page::NeighborCells) && !app.neighbour_fetched {
-                                app.neighbour_fetched = true;
-                                send_request(
-                                    &app.request_tx,
-                                    &response_tx,
-                                    Request::FetchNeighbors,
-                                );
-                            }
                         }
                         KeyCode::BackTab => {
                             app.previous_page();
-                            if matches!(app.page, Page::NeighborCells) && !app.neighbour_fetched {
-                                app.neighbour_fetched = true;
-                                send_request(
-                                    &app.request_tx,
-                                    &response_tx,
-                                    Request::FetchNeighbors,
-                                );
-                            }
                         }
                         KeyCode::Char('1') => {
                             app.go_to_page(0);
-                            if matches!(app.page, Page::NeighborCells) && !app.neighbour_fetched {
-                                app.neighbour_fetched = true;
-                                send_request(
-                                    &app.request_tx,
-                                    &response_tx,
-                                    Request::FetchNeighbors,
-                                );
-                            }
                         }
                         KeyCode::Char('2') => app.go_to_page(1),
                         KeyCode::Char('3') => app.go_to_page(2),
@@ -875,16 +839,24 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             }
                         }
                         KeyCode::Enter => {
-                            if let Page::BandLock = app.page {
+                            if matches!(app.page, Page::NeighborCells)
+                                && !app.neighbour_fetched
+                                && !app.neighbour_fetching
+                            {
+                                app.neighbour_fetching = true;
+                                app.status_message = "Searching neighbour cells...".into();
+                                send_request(
+                                    &app.request_tx,
+                                    &response_tx,
+                                    Request::FetchNeighbors,
+                                );
+                            } else if let Page::BandLock = app.page {
                                 let selected = app.band_lock_state.state.selected().unwrap_or(0);
                                 let earfcn = app.band_lock_state.items[selected].clone();
                                 send_request(
                                     &app.request_tx,
                                     &response_tx,
-                                    Request::SetBandLock {
-                                        index: selected,
-                                        earfcn,
-                                    },
+                                    Request::SetBandLock { earfcn },
                                 );
                                 app.band_lock_response = Some("Sending...".to_string());
                             }
