@@ -12,24 +12,47 @@ const BASE_URL: &str = "http://192.168.0.1";
 pub async fn authenticate() -> Result<(String, String), Box<dyn Error>> {
     let client = Client::builder().timeout(Duration::from_secs(10)).build()?;
 
-    let response = client
-        .post(format!("{}/authenticate.leano", BASE_URL))
-        .header(
-            "Content-Type",
-            "application/x-www-form-urlencoded; charset=UTF-8",
-        )
-        .body("authenticate admin admin")
-        .send()
-        .await?;
+    // Try admin/admin first
+    let credentials = [("admin", "admin"), ("zitel", "zitel")];
 
-    let json: Value = response.json().await?;
+    for (username, password) in credentials {
+        let auth_body = format!("authenticate {} {}", username, password);
 
-    if json["status"] == "success" {
-        let token = json["token"].as_str().unwrap_or("").to_string();
-        Ok((token.clone(), token))
-    } else {
-        Err("Authentication failed".into())
+        let response = client
+            .post(format!("{}/authenticate.leano", BASE_URL))
+            .header(
+                "Content-Type",
+                "application/x-www-form-urlencoded; charset=UTF-8",
+            )
+            .body(auth_body)
+            .send()
+            .await?;
+
+        let json: Value = response.json().await?;
+
+        if json["status"] == "success" {
+            let token = json["token"].as_str().unwrap_or("").to_string();
+
+            // If logged in with zitel/zitel, change password to admin/admin
+            if username == "zitel" {
+                let _ = client
+                    .post(format!("{}/api.leano", BASE_URL))
+                    .header(
+                        "Content-Type",
+                        "application/x-www-form-urlencoded; charset=UTF-8",
+                    )
+                    .header("Leano_Auth", &token)
+                    .header("Accept", "*/*")
+                    .header("X-Requested-With", "XMLHttpRequest")
+                    .body("setdigest admin admin")
+                    .send()
+                    .await;
+            }
+            return Ok((token.clone(), token));
+        }
     }
+
+    Err("Authentication failed".into())
 }
 
 pub async fn api_request(auth_header: &str, command: &str) -> Result<Value, Box<dyn Error>> {
