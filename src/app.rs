@@ -4,6 +4,7 @@ use std::time::{Duration, Instant};
 use serde_json::Value;
 use tokio::sync::mpsc;
 
+use crate::scan::ScanState;
 use crate::models::{
     bandlock::BandLockState,
     page::Page,
@@ -12,6 +13,9 @@ use crate::models::{
 
 pub const DEFAULT_DMZ_IP: &str = "192.168.0.92";
 pub const RSRP_HISTORY_LEN: usize = 100;
+/// RSRP is graphed as dB above the -140 dBm floor, so taller bars mean better signal (-44 dBm = full).
+pub const RSRP_FLOOR_DBM: i64 = -140;
+pub const RSRP_GRAPH_MAX: u64 = 96;
 pub const SPEED_HISTORY_LEN: usize = 100;
 pub const REFRESH_INTERVAL: Duration = Duration::from_secs(1);
 
@@ -24,6 +28,7 @@ pub struct App {
     pub rsrp_history: VecDeque<u64>,
     pub dmz_ip_input: String,
     pub band_lock_state: BandLockState,
+    pub scan: ScanState,
     pub status_message: String,
     pub request_tx: mpsc::UnboundedSender<(Request, mpsc::UnboundedSender<Response>)>,
 
@@ -54,6 +59,7 @@ impl App {
             rsrp_history: VecDeque::with_capacity(RSRP_HISTORY_LEN),
             dmz_ip_input: String::new(),
             band_lock_state: BandLockState::new(),
+            scan: ScanState::default(),
             status_message: String::new(),
             request_tx,
             neighbour_fetched: false,
@@ -69,30 +75,15 @@ impl App {
     }
 
     pub fn next_page(&mut self) {
-        self.page = match self.page {
-            Page::Dashboard => Page::NeighborCells,
-            Page::NeighborCells => Page::BandLock,
-            Page::BandLock => Page::Dmz,
-            Page::Dmz => Page::Dashboard,
-        };
+        self.go_to_page((self.page.index() + 1) % Page::ALL.len());
     }
 
     pub fn previous_page(&mut self) {
-        self.page = match self.page {
-            Page::Dashboard => Page::Dmz,
-            Page::NeighborCells => Page::Dashboard,
-            Page::BandLock => Page::NeighborCells,
-            Page::Dmz => Page::BandLock,
-        };
+        self.go_to_page((self.page.index() + Page::ALL.len() - 1) % Page::ALL.len());
     }
 
     pub fn go_to_page(&mut self, idx: usize) {
-        self.page = match idx {
-            1 => Page::NeighborCells,
-            2 => Page::BandLock,
-            3 => Page::Dmz,
-            _ => Page::Dashboard,
-        };
+        self.page = Page::ALL.get(idx).copied().unwrap_or(Page::Dashboard);
     }
 
     pub fn update_traffic(&mut self) {

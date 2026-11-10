@@ -1,29 +1,21 @@
 use ratatui::{
     layout::{Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
-    text::{Line, Text},
-    widgets::{Block, Borders, Paragraph, Wrap},
+    text::{Line, Span, Text},
+    widgets::{Paragraph, Wrap},
     Frame,
 };
 
-use crate::{app::App, ui::components::add_line};
+use crate::{app::App, ui::components::{add_line, draw_header, panel}};
 
 pub fn draw_neighbor_cells(f: &mut Frame, app: &App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .margin(1)
-        .constraints([Constraint::Length(3), Constraint::Min(0)])
+        .constraints([Constraint::Length(2), Constraint::Min(0)])
         .split(f.size());
 
-    let title = Paragraph::new("Neighbor Cells")
-        .style(
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        )
-        .block(Block::default().borders(Borders::ALL));
-
-    f.render_widget(title, chunks[0]);
+    draw_header(f, chunks[0], "Neighbor Cells");
 
     let mut lines = vec![];
 
@@ -43,7 +35,7 @@ pub fn draw_neighbor_cells(f: &mut Frame, app: &App) {
 
         for i in 1..=count {
             lines.push(Line::from(""));
-            lines.push(Line::from(format!(" Cell {} ", i)));
+            lines.push(Line::from(Span::styled(format!("Cell {}", i), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))));
 
             add_line(&mut lines, "MCC", data, &format!("type{}", i));
             add_line(&mut lines, "MNC", data, &format!("band{}", i));
@@ -56,9 +48,7 @@ pub fn draw_neighbor_cells(f: &mut Frame, app: &App) {
 
     let paragraph = Paragraph::new(Text::from(lines))
         .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title("Neighbour Cells"),
+            panel("Results")
         )
         .wrap(Wrap { trim: true });
 

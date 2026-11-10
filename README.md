@@ -3,6 +3,8 @@
 * Change LTE bands without contacting support
 * Unlock advanced admin features (VPN, Band Lock, and more)
 * Refresh your IP address quickly
+* Live signal analyzer (RSRP / RSRQ / SINR grades, score, stability)
+* Band scan: tests every band for best speed, signal and ping (tab 4)
 * Simple terminal-based interface
 <img width="1214" height="708" alt="image" src="https://github.com/user-attachments/assets/a468edda-eac6-4c13-a7df-a4e142b32707" />
 
@@ -43,6 +45,8 @@ The modem IP address must be:
 * تغییر باند بدون نیاز به تماس با پشتیبانی
 * فعال‌سازی قابلیت‌های ادمین مانند VPN و Band Lock
 * تغییر سریع IP
+* تحلیلگر زنده سیگنال (RSRP / RSRQ / SINR)
+* اسکن باندها برای یافتن بهترین سرعت، سیگنال و پینگ (تب ۴)
 * رابط کاربری ساده و ترمینالی
 
 ## پیش‌نیازها

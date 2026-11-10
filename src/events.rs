@@ -66,6 +66,24 @@ pub fn handle_key_event(
         KeyCode::Char('2') => app.go_to_page(1),
         KeyCode::Char('3') => app.go_to_page(2),
         KeyCode::Char('4') => app.go_to_page(3),
+        KeyCode::Char('5') => app.go_to_page(4),
+
+        KeyCode::Esc if app.scan.running => {
+            app.scan.cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+            app.scan.phase = "Cancelling after the current step…".into();
+        }
+
+        KeyCode::Char('a') | KeyCode::Char('A')
+            if app.page == crate::models::page::Page::BandScan && !app.scan.running =>
+        {
+            match app.scan.best_speed().map(|b| b.earfcn.clone()) {
+                Some(earfcn) => {
+                    app.status_message = format!("Locking best-speed EARFCN {}", earfcn);
+                    send_request(&app.request_tx, response_tx, Request::SetBandLock { earfcn });
+                }
+                None => app.status_message = "Run a scan first".into(),
+            }
+        }
 
         KeyCode::Up => {
             let current = app.band_lock_state.state.selected().unwrap_or(0);
@@ -106,6 +124,21 @@ pub fn handle_key_event(
                 );
 
                 app.band_lock_response = Some("Sending...".to_string());
+            }
+
+            crate::models::page::Page::BandScan => {
+                if !app.scan.running {
+                    app.scan.start(app.band_lock_state.items.clone());
+                    send_request(
+                        &app.request_tx,
+                        response_tx,
+                        Request::StartScan {
+                            earfcns: app.scan.earfcns.clone(),
+                            cancel: app.scan.cancel.clone(),
+                        },
+                    );
+                    app.status_message = "Band scan started".into();
+                }
             }
 
             crate::models::page::Page::Dmz => {

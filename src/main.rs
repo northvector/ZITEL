@@ -24,6 +24,8 @@ mod api;
 mod app;
 mod events;
 mod models;
+mod scan;
+mod signal;
 mod ui;
 
 use api::{authenticate, run_handlers};
@@ -36,7 +38,7 @@ use models::{
 
 use ui::{
     bandlock::draw_band_lock, dashboard::draw_dashboard, dmz::draw_dmz,
-    neighbors::draw_neighbor_cells,
+    neighbors::draw_neighbor_cells, scan::draw_band_scan,
 };
 
 fn ui(f: &mut ratatui::Frame, app: &mut App) {
@@ -44,6 +46,7 @@ fn ui(f: &mut ratatui::Frame, app: &mut App) {
         Page::Dashboard => draw_dashboard(f, app),
         Page::NeighborCells => draw_neighbor_cells(f, app),
         Page::BandLock => draw_band_lock(f, app),
+        Page::BandScan => draw_band_scan(f, app),
         Page::Dmz => draw_dmz(f, app),
     }
 
@@ -54,23 +57,34 @@ fn ui(f: &mut ratatui::Frame, app: &mut App) {
         1,
     );
 
-    let tabs = [" Dashboard ", " Neighbors ", " BandLock ", " DMZ "];
-
-    let mut footer_spans = vec![Span::raw(" Tabs: ")];
+    let mut footer_spans = vec![Span::raw(" ")];
 
     let active_index = app.page.index();
 
-    for (i, name) in tabs.iter().enumerate() {
+    for (i, name) in Page::TITLES.iter().enumerate() {
         let style = if i == active_index {
             Style::default().fg(Color::Black).bg(Color::Cyan)
         } else {
-            Style::default()
+            Style::default().fg(Color::Gray)
         };
 
-        footer_spans.push(Span::styled(format!("{}({}) ", name, i + 1), style));
+        footer_spans.push(Span::styled(format!(" {} {} ", i + 1, name), style));
+        footer_spans.push(Span::raw(" "));
     }
 
-    footer_spans.push(Span::raw("| i: refresh ip | q: quit | "));
+    let hint = match app.page {
+        Page::Dashboard => "i refresh ip",
+        Page::NeighborCells => "enter search",
+        Page::BandLock => "↑↓ select · enter lock",
+        Page::BandScan if app.scan.running => "esc cancel",
+        Page::BandScan => "enter scan · a apply best",
+        Page::Dmz => "type ip · enter apply",
+    };
+
+    footer_spans.push(Span::styled(
+        format!("│ {} · q quit │ ", hint),
+        Style::default().fg(Color::Gray),
+    ));
 
     footer_spans.push(Span::raw(&app.status_message));
 
@@ -118,16 +132,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     if let Some(e) = error {
                         app.status_message = format!("Dashboard error: {}", e);
                     } else {
-                        if let Some(rsrp_str) = data["RSRP"].as_str() {
-                            if let Ok(val) = rsrp_str.parse::<i64>() {
-                                let abs_val = val.unsigned_abs().min(140);
+                        if let Some(val) = signal::read(&data, "RSRP") {
+                            let level = (val.round() as i64 - app::RSRP_FLOOR_DBM)
+                                .clamp(0, app::RSRP_GRAPH_MAX as i64)
+                                as u64;
 
-                                if app.rsrp_history.len() >= app::RSRP_HISTORY_LEN {
-                                    app.rsrp_history.pop_front();
-                                }
-
-                                app.rsrp_history.push_back(abs_val);
+                            if app.rsrp_history.len() >= app::RSRP_HISTORY_LEN {
+                                app.rsrp_history.pop_front();
                             }
+
+                            app.rsrp_history.push_back(level);
                         }
 
                         app.index_data = data;
@@ -154,6 +168,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 Response::BandLockResult { result } => {
                     app.band_lock_response = Some(result);
                 }
+
+                Response::Scan(event) => app.scan.apply(event),
 
                 Response::DmzResult(result) => {
                     app.dmz_response = Some(result);

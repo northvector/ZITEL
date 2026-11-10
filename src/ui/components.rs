@@ -1,19 +1,46 @@
 use ratatui::{
-    style::{Color, Style},
+    layout::Rect,
+    style::{Color, Modifier, Style},
     text::{Line, Span, Text},
+    widgets::{Block, BorderType, Borders, Padding, Paragraph},
+    Frame,
 };
 
 use serde_json::Value;
 
 use crate::app::App;
 
-pub fn add_line<'a>(lines: &mut Vec<Line<'a>>, label: &str, data: &'a Value, key: &str) {
-    let val = data[key].as_str().unwrap_or("-");
+/// Bordered panel used by every page: rounded corners, muted border, padded title and body.
+pub fn panel(title: &str) -> Block<'static> {
+    Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(Color::DarkGray))
+        .title(Span::styled(
+            format!(" {} ", title),
+            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+        ))
+        .padding(Padding::horizontal(1))
+}
 
-    lines.push(Line::from(vec![
-        Span::styled(format!("{:12}", label), Style::default().fg(Color::Gray)),
-        Span::raw(val),
-    ]));
+/// One-line page header; callers reserve `Constraint::Length(2)` so a blank row follows it.
+pub fn draw_header(f: &mut Frame, area: Rect, title: &str) {
+    let line = Line::from(vec![
+        Span::styled(" Zitel ", Style::default().fg(Color::Black).bg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        Span::styled(format!("  {}", title), Style::default().add_modifier(Modifier::BOLD)),
+    ]);
+    f.render_widget(Paragraph::new(line), area);
+}
+
+pub fn kv<'a>(label: &str, value: Span<'a>) -> Line<'a> {
+    Line::from(vec![
+        Span::styled(format!("{:<12}", label), Style::default().fg(Color::Gray)),
+        value,
+    ])
+}
+
+pub fn add_line<'a>(lines: &mut Vec<Line<'a>>, label: &str, data: &'a Value, key: &str) {
+    lines.push(kv(label, Span::raw(data[key].as_str().unwrap_or("-"))));
 }
 
 pub fn format_bytes(bytes: u64) -> String {
@@ -38,9 +65,6 @@ pub fn build_connection_text(data: &Value) -> Text<'_> {
     add_line(&mut lines, "Type", data, "TYPE");
     add_line(&mut lines, "Band", data, "BAND");
     add_line(&mut lines, "CSQ", data, "CSQ");
-    add_line(&mut lines, "RSRP", data, "RSRP");
-    add_line(&mut lines, "RSRQ", data, "RSRQ");
-    add_line(&mut lines, "SINR", data, "SINR");
     add_line(&mut lines, "RSSI", data, "RSSI");
 
     let public_ip = data["IPV4"]
@@ -50,7 +74,7 @@ pub fn build_connection_text(data: &Value) -> Text<'_> {
 
     let internet_status = data["INTERNET"].as_str().unwrap_or("-");
 
-    lines.push(Line::from(format!("Public IP:    {}", public_ip)));
+    lines.push(kv("Public IP", Span::raw(public_ip)));
 
     let status_color = if internet_status.to_lowercase() == "online" {
         Color::Green
@@ -58,10 +82,10 @@ pub fn build_connection_text(data: &Value) -> Text<'_> {
         Color::Red
     };
 
-    lines.push(Line::from(vec![
-        Span::raw("Internet:     "),
+    lines.push(kv(
+        "Internet",
         Span::styled(internet_status, Style::default().fg(status_color)),
-    ]));
+    ));
 
     Text::from(lines)
 }
@@ -93,28 +117,21 @@ pub fn build_data_usage_text(app: &App) -> Text<'_> {
         .and_then(|s| s.parse::<u64>().ok())
         .unwrap_or(0);
 
-    lines.push(Line::from(format!(
-        "Received: {}",
-        format_bytes(current_rx)
-    )));
-
-    lines.push(Line::from(format!(
-        "Sent:     {}",
-        format_bytes(current_tx)
-    )));
+    lines.push(kv("Received", Span::raw(format_bytes(current_rx))));
+    lines.push(kv("Sent", Span::raw(format_bytes(current_tx))));
 
     if let Some(dl) = app.download_speed {
-        lines.push(Line::from(vec![
-            Span::raw("Download:  "),
+        lines.push(kv(
+            "Download",
             Span::styled(format!("{:.2} Mbps", dl), Style::default().fg(Color::Green)),
-        ]));
+        ));
     }
 
     if let Some(ul) = app.upload_speed {
-        lines.push(Line::from(vec![
-            Span::raw("Upload:    "),
-            Span::styled(format!("{:.2} Mbps", ul), Style::default().fg(Color::Red)),
-        ]));
+        lines.push(kv(
+            "Upload",
+            Span::styled(format!("{:.2} Mbps", ul), Style::default().fg(Color::Magenta)),
+        ));
     }
 
     Text::from(lines)

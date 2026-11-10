@@ -225,6 +225,11 @@ pub async fn run_handlers(
 
                 let _ = resp_tx.send(Response::DmzResult(msg));
             }
+
+            // Runs in its own task so dashboard refreshes keep flowing during the scan.
+            Request::StartScan { earfcns, cancel } => {
+                tokio::spawn(crate::scan::run_scan(auth_header.clone(), earfcns, cancel, resp_tx));
+            }
         }
     }
 }
